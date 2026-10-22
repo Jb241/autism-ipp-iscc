@@ -1,0 +1,73 @@
+---
+title: "Autism IPP Paper - Step 1: Recodes"
+subtitle: "Recode original data to match V11 (10.20.26)"
+author:
+  - name: Devin Byers
+    affiliation: Project Lead
+  - name: Jess Brantez
+    affiliation: Data Analyst
+date: 2026-10-22
+date-modified: last-modified
+date-format: "MMMM D, YYYY"
+language:
+  title-block-published: "Created"
+  title-block-modified: "Last modified"
+  title-block-affiliation-plural: "Roles"
+format:
+  html:
+    theme: cosmo
+    css: styles.css
+    toc: true
+    toc-location: left
+    number-sections: true
+    number-depth: 2
+    code-fold: false
+    code-copy: true
+    highlight-style: github
+    embed-resources: true
+execute:
+  warning: false
+  message: false
+---
+
+## Overview
+
+|             |                                                 |
+|-------------|-------------------------------------------------|
+| **Input**   | `Original Data.xlsx`                            |
+| **Output**  | `autism_ipp_recoded.rds`                        |
+
+::: {.callout-note collapse="true" title="Dependencies"}
+The parent folder of this document's folder should contain a folder called `Data` with the file `Original Data.xlsx`.
+:::
+
+## Set up
+
+::: {.callout-note collapse="true" title="Working directory"}
+Quarto runs code from the folder this `.qmd` file is saved in, so you don't need `setwd()`. Relative paths like `../Data/` work as long as the folder layout above is in place.
+:::
+
+### Load packages
+
+```{r}
+#| label: load-packages
+# run once, then leave commented out:
+# install.packages(c("tidyverse", "readxl"))  
+library(tidyverse)
+library(readxl)
+```
+
+### Load original data
+
+```{r}
+#| label: load-data
+
+data <- read_excel("../Data/Original Data.xlsx")
+```
+
+## Step 2
+
+```{r}
+#| label: step-2
+
+```

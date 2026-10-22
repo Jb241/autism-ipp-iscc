@@ -1,0 +1,14 @@
+*.csv
+*.xlsx
+*.xls
+*.rds
+*.Rdata
+*_files/
+*.quarto/
+Data/*
+!Data/.gitkeep
+*.html
+.DS_Store
+.Rhistory
+.RData
+.Rproj.user/
