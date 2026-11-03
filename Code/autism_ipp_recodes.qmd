@@ -51,6 +51,7 @@ Quarto runs code from the folder this `.qmd` file is saved in, so you don't need
 
 ```{r}
 #| label: load-packages
+
 # run once, then leave commented out:
 # install.packages(c("tidyverse", "readxl"))  
 library(tidyverse)
@@ -65,9 +66,355 @@ library(readxl)
 data <- read_excel("../Data/Original Data.xlsx")
 ```
 
-## Step 2
+## Filter eligibility
+First, we need to remove participants who do not meet eligibility or data quality requirements. These IDs come from a prepared list in the "Missing Data" document.
 
 ```{r}
-#| label: step-2
+#| label: filter eligibility
 
+# opened survey but did not proceed to screener:
+data <- data |> 
+  filter(!record_id %in% c(7, 44, 74,107, 124, 286, 293, 298, 332)) # filter keeps ids that are not listed
+
+# not a practicing school psychologist in the U.S.:
+data <- data |> 
+  filter(!record_id %in% c(80, 183, 249, 285, 333))
+
+# commented out because left in V11 sample and is removed in a later step
+#not at least 18yo
+# data <- data |> 
+#  filter(!record_id %in% c(89))
+
+# has not previously conducted an autism evaluation:
+data <- data |> 
+  filter(!record_id %in% c(2, 6, 12, 116, 129, 173, 310, 311, 312))
+
+# does not spend the majority of their employment in school settings 
+data <- data |> 
+  filter(!record_id %in% c(89, 254))
+
+# did not provide usable data after demographic section
+data <- data |> 
+  filter(!record_id %in% c(3, 11, 23, 35, 38, 40, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 67, 78, 110, 122, 132, 133, 134, 136, 155, 184, 225, 242, 267, 283, 297, 314, 321, 327))
+```
+
+
+## Participant characteristics
+These include gender, race/ethnicity, highest degree attained, internship setting, practice setting, and school district type.
+
+```{r}
+#| label: recode participant characteristics pt 1
+
+# Gender
+data <- data |>
+  mutate(                   # adds 1 or more new variable to data
+    gender =                # names new variable
+      factor(gender_dem,    # old variable basis
+        levels = c(10, 20, 30, 40, 50, 60, 70, 80, 90),
+        labels = c("Gender Fluid", "Man", "Non-binary", # labels the numeric values
+                   "Transgender man", "Transgender woman",
+                   "Two Spirit", "Woman", "Other",
+                   "Prefer not to respond")))
+table(data$gender, useNA = "ifany")
+
+# Race/ethnicity
+race_cols <- paste0("race_dem___", c(10, 20, 30, 40, 50, 60, 70, 80, 90, 100)) # create object holding all the race variable names
+
+data <- data |>
+  mutate(
+    race_count = rowSums(data[race_cols]), # adds the race variables together
+    race = case_when(
+      race_count > 1 ~ "Biracial or Multiracial", # when more than one race is selected (more                                                      than one race variable is 1)
+      race_dem___10  == 1 ~ "Asian or Asian American",
+      race_dem___20  == 1 ~ "Biracial or Multiracial",
+      race_dem___30  == 1 ~ "Black or African American",
+      race_dem___40  == 1 ~ "Latino/a/x/e",
+      race_dem___50  == 1 ~ "Middle Eastern or North African",
+      race_dem___60  == 1 ~ "Native American, Alaska Native, or Indigenous",
+      race_dem___70  == 1 ~ "Native Hawaiian or Other Pacific Islander",
+      race_dem___80  == 1 ~ "White",
+      race_dem___90  == 1 ~ "Other",
+      race_dem___100 == 1 ~ "Prefer not to respond"
+    )
+  )
+table(data$race, useNA = "ifany")
+```
+Note: The race frequencies do not match the current Table 1 because they convert people who checked multiple boxes to the biracial/multiracial category. V11 currently lets multiracial land in one of the categories they checked.
+
+```{r}
+#| label: recode participant characteristics pt 2
+
+# Degree
+data <- data |>
+  mutate(
+    degree = factor(degree_screen,
+                     levels = c(20, 30, 40),
+                     labels = c("Master's", "Specialist", "Doctorate")),
+    masters_nasp    = factor(masters_screen, 
+                             levels = 0:2, # 0:2 creates a vector of values 0, 1, 2
+                             labels = c("No", "Yes", "Unsure")),
+    specialist_nasp = factor(specialist_screen, 
+                             levels = 0:2, 
+                             labels = c("No", "Yes", "Unsure")),
+    doctorate_nasp  = factor(docnasp_screen, 
+                             levels = 0:2, 
+                             labels = c("No", "Yes", "Unsure")),
+    doctorate_apa   = factor(docapa_screen, 
+                             levels = 0:1, 
+                             labels = c("No", "Yes"))
+  )
+# Master's with NASP Accredited (Yes/No/Unsure)
+table(data$degree, data$masters_nasp, useNA = "ifany")
+# Specialist with NASP Accredited (Yes/No/Unsure)
+table(data$degree, data$specialist_nasp, useNA = "ifany")
+# Doctorate with NASP Accredited (Yes/No/Unsure)
+table(data$degree, data$doctorate_nasp, useNA = "ifany")
+# Doctorate with APA Accredited (Yes/No)
+table(data$degree, data$doctorate_apa, useNA = "ifany")
+
+# Internship setting (check all that apply)
+# we keep these as separate variables because one person can be found in multiple categories
+# if a single variable is preferred, a multi-setting category would need to be added
+data <- data |>
+  rename(
+    intern_school = intern_dem___10,
+    intern_hospital = intern_dem___20,
+    intern_detention = intern_dem___30,
+    intern_health_sci = intern_dem___40,
+    intern_residential = intern_dem___50,
+    intern_community_mh = intern_dem___60,
+    intern_consortium = intern_dem___70,
+    intern_other = intern_dem___80
+  )
+# 1 for all of these means yes participants interned in that setting
+table(data$intern_school, useNA = "ifany") # Schools
+table(data$intern_consortium, useNA = "ifany") # Consortium
+table(data$intern_residential, useNA = "ifany") # Residential Treatment Center
+table(data$intern_community_mh, useNA = "ifany") # Community Mental Health Center
+table(data$intern_other, useNA = "ifany") # Other
+table(data$intern_hospital, useNA = "ifany") # Children's Hospital
+table(data$intern_health_sci, useNA = "ifany") # Health Science Center
+table(data$intern_detention, useNA = "ifany") # Juvenile Detention Center
+
+
+# Practice setting
+data <- data |>
+  mutate(
+    practice_setting = factor(employ_screen,
+                               levels = c(10, 20, 30),
+                               labels = c("Public Schools", "Charter Schools", "Private Schools")))
+table(data$practice_setting, useNA = "ifany")
+
+# District type
+data <- data |>
+  mutate(district = factor(district_dem,
+                            levels = c(10, 20, 30, 40),
+                            labels = c("Urban", "Suburban", "Rural", "Unsure")))
+table(data$district, useNA = "ifany") # NA is the "Missing" row in Table 1
+```
+
+## Predictors
+These include self-rated autism knowledge, factual autism knowledge, autism training, attitudes toward IPP efficiency, and attitudes toward IPP service quality.
+
+```{r}
+#| label: recode predictors pt 1
+
+# Self-rated knowledge
+self_cols <- c("knowledge_prac", "auknowledge_prac")
+data <- data |>
+  mutate(perceived_know = rowSums(data[self_cols]) / 200) # add and divide by 200
+summary(data$perceived_know)
+
+# Factual knowledge
+data <- data |> # recode answers to 0 (wrong) and 1 (correct)
+  mutate(
+    asdpop_askspr = as.integer(asdpop_askspr == 20),
+    diagtimes_askspr = as.integer(diagtimes_askspr == 30),
+    riskfac_askspr = as.integer(riskfac_askspr == 30),
+    identif_askspr = as.integer(identif_askspr == 20),
+    intellectdis_askspr = as.integer(intellectdis_askspr == 20),
+    exhibitdef_askspr = as.integer(exhibitdef_askspr == 20),
+    profdiagnose_askspr = as.integer(profdiagnose_askspr == 10),
+    spedelig_askspr = as.integer(spedelig_askspr == 20),
+    asdadult_askspr = as.integer(asdadult_askspr == 10),
+    notevbasedinter_askspr = as.integer(notevbasedinter_askspr == 40),
+    evbasedinterv_askspr = as.integer(evbasedinterv_askspr == 30),
+    cooccur_askspr = as.integer(cooccur_askspr == 40),
+    langinfo_askspr = as.integer(langinfo_askspr == 30),
+    dsmlevel_askspr = as.integer(dsmlevel_askspr == 20),
+    disordtype_askspr = as.integer(disordtype_askspr == 10),
+    socialcomdef_askspr = as.integer(socialcomdef_askspr == 30),
+    restrictrepet_askspr = as.integer(restrictrepet_askspr == 40),
+    disdiagprim_askspr = as.integer(disdiagprim_askspr == 10),
+    siblings_askspr = as.integer(siblings_askspr == 20),
+    readingasd_askspr = as.integer(readingasd_askspr == 20),
+    standardtranslate_askspr = as.integer(standardtranslate_askspr == 40),
+    agediagno_askspr = as.integer(agediagno_askspr == 10),
+    afterage_askspr = as.integer(afterage_askspr == 20),
+    asdglobe_askspr = as.integer(asdglobe_askspr == 20),
+    clinicidentify_askspr = as.integer(clinicidentify_askspr == 30)
+  )
+
+fact_cols <- c("asdpop_askspr", "diagtimes_askspr", 
+               "riskfac_askspr", "identif_askspr",
+               "intellectdis_askspr", "exhibitdef_askspr", 
+               "profdiagnose_askspr", "spedelig_askspr",
+               "asdadult_askspr", "notevbasedinter_askspr",
+               "evbasedinterv_askspr", "cooccur_askspr",
+               "langinfo_askspr", "dsmlevel_askspr",
+               "disordtype_askspr", "socialcomdef_askspr",
+               "restrictrepet_askspr", "disdiagprim_askspr",
+               "siblings_askspr", "readingasd_askspr",
+               "standardtranslate_askspr", "agediagno_askspr",
+               "afterage_askspr", "asdglobe_askspr",
+               "clinicidentify_askspr")
+data <- data |>
+  mutate(fact_know_asksp = rowSums(data[fact_cols], na.rm = T) / 25) 
+# skipped questions are treated as incorrect. counts correct answers and divides by possible 25
+summary(data$fact_know_asksp)
+
+# Autism training
+train_cols <- c("amttrain_prac", "qualtraining_prac", "gradtrain_prac")
+data <- data |>
+  mutate(train_quality = rowSums(data[train_cols]) / 300)
+summary(data$train_quality)
+
+# Attitudes
+data <- data |>    # reverse code: (max + min) - value
+  mutate(complicate_atihct_rev = 70 - complicate_atihct,
+         jargon_atihct_rev = 70 - jargon_atihct,
+         timeconsume_atihct_rev = 70 - timeconsume_atihct,
+         timerequire_atihct_rev = 70 - timerequire_atihct
+  )
+
+# Attitudes: efficiency
+efficiency_cols <- c("needs_atihct", "timeconsume_atihct_rev",
+                     "givetake_atihct", "timerequire_atihct_rev")
+data <- data |>
+  mutate(att_effic_atihct = rowSums(data[efficiency_cols]))
+summary(data$att_effic_atihct)
+
+# Attitudes: quality
+quality_cols <- c("complicate_atihct_rev", "jargon_atihct_rev")
+data <- data |>
+  mutate(att_quality_atihct = rowSums(data[quality_cols]))
+summary(data$att_quality_atihct)
+
+```
+
+## Outcomes
+These include total interprofessional collaboration, frequency of interprofessional collaboration, total interagency collaboration, and frequency of interagency collaboration.
+
+::: {.callout-note collapse="false" title="Frequency operationalization"}
+The frequency measures are created by averaging across the frequency ratings for each type of collaborator. If a participant did not agree that they collaborate with a certain kind of individual, that will not contribute to this measure. For example, a participant who collaborates very frequently with PTs and OTs but never with other interprofesional collaborators could still have a higher frequency rating than another participant who collaborates with all types of collaborators but who rarely collaborates with each of them.
+:::
+
+```{r}
+#| label: recode outcomes
+
+# Total interprofessional collaborators
+interpro_cols <- paste0("collab_prim___", seq(10, 120, by = 10)) # creates object with all of the collaborator variables
+!anyNA(data[interpro_cols]) # checks that there are no missing values (TRUE)
+data <- data |>
+  mutate(interpro_num = rowSums(data[interpro_cols])) # counts number of professionals
+summary(data$interpro_num)
+
+# Frequency of interprofessional collaboration
+interprofreq_cols <-c("collab_prim_aud", "collab_prim_slp", "collab_prim_ot", "collab_prim_pt", "collab_prim_sn", "collab_prim_sc", "collab_prim_sw", "collab_prim_bs", "collab_prim_as", "collab_prim_sped", "collab_prim_ge")
+data <- data |>
+  mutate(interpro_freq = rowMeans(data[interprofreq_cols], na.rm = T)) # averages frequencies across professionals that are selected (ignoring non-selected (NAs))
+summary(data$interpro_freq)
+
+# Total interagency collaborators
+interag_cols <- paste0("interout_prim___", seq(10, 100, by = 10))
+!anyNA(data[interag_cols]) # TRUE means no missing values
+data <- data |>
+  mutate(interag_num = rowSums(data[interag_cols]))
+summary(data$interag_num)
+
+# Frequency of interagency collaboration
+interagfreq_cols <-c("interout_prim_aud", "interout_prim_slp", "interout_prim_ot", "interout_prim_pt", "interout_prim_pcp", "interout_prim_psych", "interout_prim_ment", "interout_prim_sw", "interout_prim_ba")
+data <- data |>
+  mutate(interag_freq = rowMeans(data[interagfreq_cols], na.rm = T))
+summary(data$interag_freq)
+```
+Please note that the NA's in these measures could either mean that they do not participate in any intra/interprofessional collaboration or that they did not answer these questions.
+
+## Export dataset
+
+### Keep relevant variables
+```{r}
+#| label: keep relevant variables
+
+data_recoded <- data |> # restrict to just relevant variables
+  select(
+    # ID
+    record_id,
+
+    # Participant characteristics
+    age_screen, practice_dem, totalau_prac,
+    gender,
+    race_dem___10, race_dem___20, race_dem___30, race_dem___40, race_dem___50,
+    race_dem___60, race_dem___70, race_dem___80, race_dem___90, race_dem___100,
+    race,
+    degree, masters_nasp, specialist_nasp, doctorate_nasp, doctorate_apa,
+    intern_school, intern_hospital, intern_detention, intern_health_sci,
+    intern_residential, intern_community_mh, intern_consortium, intern_other,
+    practice_setting, district,
+
+    # Self-rated autism knowledge
+    knowledge_prac, auknowledge_prac, 
+    perceived_know, # Key
+
+    # Factual autism knowledge (ASKSP-R items, scored 0/1)
+    asdpop_askspr, diagtimes_askspr, riskfac_askspr, identif_askspr,
+    intellectdis_askspr, exhibitdef_askspr, profdiagnose_askspr, spedelig_askspr,
+    asdadult_askspr, notevbasedinter_askspr, evbasedinterv_askspr, cooccur_askspr,
+    langinfo_askspr, dsmlevel_askspr, disordtype_askspr, socialcomdef_askspr,
+    restrictrepet_askspr, disdiagprim_askspr, siblings_askspr, readingasd_askspr,
+    standardtranslate_askspr, agediagno_askspr, afterage_askspr, asdglobe_askspr,
+    clinicidentify_askspr,
+    fact_know_asksp, # Key
+
+    # Autism training
+    amttrain_prac, qualtraining_prac, gradtrain_prac, 
+    train_quality, # Key
+
+    # Attitudes toward IPP (ATIHCT items, reverse-coded versions, scales)
+    complicate_atihct, needs_atihct, jargon_atihct, timeconsume_atihct,
+    givetake_atihct, timerequire_atihct,
+    complicate_atihct_rev, jargon_atihct_rev, timeconsume_atihct_rev,
+    timerequire_atihct_rev,
+    att_effic_atihct, att_quality_atihct, # Key
+
+    # Interprofessional collaboration (within school)
+    multidis_prim,
+    collab_prim___10, collab_prim___20, collab_prim___30, collab_prim___40,
+    collab_prim___50, collab_prim___60, collab_prim___70, collab_prim___80,
+    collab_prim___90, collab_prim___100, collab_prim___110, collab_prim___120,
+    collab_prim_aud, collab_prim_slp, collab_prim_ot, collab_prim_pt,
+    collab_prim_sn, collab_prim_sc, collab_prim_sw, collab_prim_bs,
+    collab_prim_as, collab_prim_sped, collab_prim_ge,
+    interpro_num, interpro_freq, # Key
+
+    # Interagency collaboration (outside school)
+    interagency_prim,
+    interout_prim___10, interout_prim___20, interout_prim___30,
+    interout_prim___40, interout_prim___50, interout_prim___60,
+    interout_prim___70, interout_prim___80, interout_prim___90,
+    interout_prim___100,
+    interout_prim_aud, interout_prim_slp, interout_prim_ot, interout_prim_pt,
+    interout_prim_pcp, interout_prim_psych, interout_prim_ment, interout_prim_sw,
+    interout_prim_ba,
+    interag_num, interag_freq # Key
+  )
+
+```
+
+### Save data
+```{r}
+#| label: save data
+
+saveRDS(data_recoded, "../Data/Recoded Data.rds")
+write_csv(data_recoded, "../Data/Recoded Data.csv")
 ```
