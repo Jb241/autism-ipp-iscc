@@ -54,6 +54,11 @@ Quarto runs code from the folder this `.qmd` file is saved in, so you don't need
 library(tidyverse)
 library(readxl)
 library(mice)
+# install.packages(c("flextable", "officer", "gtsummary", "psych")) # use once then comment out
+library(flextable)
+library(officer)
+library(gtsummary)
+library(psych)
 
 ```
 
@@ -98,4 +103,241 @@ interag_imputed_data <- lapply(completed_sets, function(data) { # drop NA in eac
 ```
 
 ## Descriptive tables
+
+### Table 2
+```{r}
+#| label: create table 2
+
+# Check all that apply variables
+race_vars <- c("race_dem___80", "race_dem___40", "race_dem___30", "race_dem___10",
+               "race_dem___20", "race_dem___60", "race_dem___50", "race_dem___70",
+               "race_dem___100")
+internship_vars <- c("intern_school", "intern_consortium", "intern_residential",
+                     "intern_community_mh", "intern_other", "intern_hospital",
+                     "intern_health_sci", "intern_detention")
+checkbox_vars <- c(race_vars, internship_vars)
+
+# Specify options, labels, and create table
+table_data <- recoded_data |>
+  droplevels() |>   # remove unused factor variable levels (0 people)
+  mutate(district = replace_na(as.character(district), "Missing")) |> # "Missing" category for district
+  select(gender, all_of(race_vars), degree, # pick variables to include
+         masters_nasp, specialist_nasp, doctorate_nasp, doctorate_apa,
+         all_of(internship_vars),
+         practice_setting, district)
+table2 <- tbl_summary(data = table_data,
+                      type = list(all_of(checkbox_vars) ~ "dichotomous"), # show just counts for == 1
+                      value = list(all_of(checkbox_vars) ~ 1),
+                      statistic = all_categorical() ~ "{n} ({p}%)", # count and percents
+                      digits = all_categorical() ~ c(0,1), # 0 decimals for counts, 1 decimal for percents
+                      missing = "no", # suppresses structural NAs (like in accreditation vars)
+                      label = list(gender = "Gender",
+                                   race_dem___80 = "Race/ethnicity: White",
+                                   race_dem___40 = "Race/ethnicity: Latino/a/x/e",
+                                   race_dem___30 = "Race/ethnicity: Black or African American",
+                                   race_dem___10 = "Race/ethnicity: Asian or Asian American",
+                                   race_dem___20 = "Race/ethnicity: Biracial or Multiracial",
+                                   race_dem___60 = "Race/ethnicity: Native American, Alaska Native, or Indigenous",
+                                   race_dem___50 = "Race/ethnicity: Middle Eastern or North African",
+                                   race_dem___70 = "Race/ethnicity: Native Hawaiian or Other Pacific Islander",
+                                   race_dem___100 = "Race/ethnicity: Prefer not to respond",
+                                   race_dem___90 = "Race/ethnicity: Other",
+                                   degree = "Highest degree earned",
+                                   masters_nasp = "Master's degree: NASP accredited",
+                                   specialist_nasp = "Specialist degree: NASP accredited",
+                                   doctorate_nasp = "Doctorate: NASP accredited",
+                                   doctorate_apa = "Doctorate: APA accredited",
+                                   intern_school = "Internship: Schools",
+                                   intern_consortium = "Internship: Consortium",
+                                   intern_residential = "Internship: Residential Treatment Center",
+                                   intern_community_mh = "Internship: Community Mental Health Center",
+                                   intern_other = "Internship: Other",
+                                   intern_hospital = "Internship: Children's Hospital",
+                                   intern_health_sci = "Internship: Health Science Center",
+                                   intern_detention = "Internship: Juvenile Detention Center",
+                                   practice_setting = "Practice setting",
+                                   district = "School district type"))
+
+# Convert the table to Word format and export it
+table2_word <- as_flex_table(table2)
+doc <- read_docx() |>
+  body_add_par(paste0("Table 2. Participant Characteristics (N = ", nrow(recoded_data), ")"), # title
+               style = "heading 1") |>
+  body_add_flextable(value = table2_word) |> # table
+  body_add_par("Note. Race/ethnicity and internship setting were check-all-that-apply items, so percentages may sum to more than 100%.", style = "Normal") # footnote
+print(doc, target = "../Output/table2_participant_characteristics.docx") # save file
+```
+
+### Table 4
+```{r}
+#| label: create table 4
+
+# Keep & label study variables
+table4_data <- recoded_data |>
+  select(perceived_know, fact_know_asksp, train_quality,
+         att_effic_atihct, att_quality_atihct,
+         interpro_num, interpro_freq, interag_num, interag_freq)
+variable_labels <- c(perceived_know = "Self-rated autism knowledge",
+                     fact_know_asksp = "Factual autism knowledge",
+                     train_quality = "Autism training",
+                     att_effic_atihct = "Attitudes toward IPP: Efficacy",
+                     att_quality_atihct = "Attitudes toward IPP: Quality",
+                     interpro_num = "Total interprofessional collaboration",
+                     interpro_freq = "Frequency of interprofessional collaboration",
+                     interag_num = "Total interagency collaboration",
+                     interag_freq = "Frequency of interagency collaboration")
+
+# Get descriptive statistics and sample size
+descriptives <- describe(table4_data, na.rm = TRUE, type = 1) |>
+  rownames_to_column("variable")
+N <- nrow(recoded_data)
+table4 <- descriptives |>
+  mutate(Variable = unname(variable_labels[variable]),
+         Range = paste(sprintf("%.0f", min), sprintf("%.0f", max), sep = "–"), 
+         `n Missing` = N - n) |>
+  select(Variable, M = mean, SD = sd, Range, Skewness = skew, Kurtosis = kurtosis, `n Missing`) |>
+  mutate(across(c(M, SD, Skewness, Kurtosis), ~ round(.x, 2)), `n Missing` = round(`n Missing`, 0)) # round
+
+# Create table and export
+ft <- flextable(table4) |>
+  colformat_num(j = c("M", "SD", "Skewness", "Kurtosis"), digits = 2) |> # format columns
+  theme_booktabs() |>
+  autofit()
+doc <- read_docx() |>
+  body_add_par(paste0("Table 4. Descriptive Statistics for Study Variables (N = ", N, ")"),
+                style = "heading 1" ) |> # title
+  body_add_flextable(value = ft) |> # table
+  body_add_par("Note: Autism Spectrum Knowledge Scale for Professional Populations–Revised (ASKSP-R); Attitudes Toward Interdisciplinary Health Care Teams Scale (ATIHCTS); Interprofessional practice (IPP)", 
+               style = "Normal")
+print(doc, target = "../Output/table4_descriptive_statistics.docx") # save to file
+```
+
+### Table 5
+```{r}
+#| label: create table 5
+
+# Match each collaborator variable to its frequency variable.
+interpro_items <- tibble(
+  Professional = c("Speech Language Pathologists/Therapists", "Special Education Teachers",
+                   "General Education Teachers", "Occupational Therapists",
+                   "Social Workers", "Behavior Specialists",
+                   "School Nurses", "Physical Therapists", "School Counselors", 
+                   "Academic Specialists", "Other", "Audiologists"),
+  checkbox = paste0("collab_prim___", c(20, 100, 110, 30, 70, 80, 50, 40, 60, 90, 120, 10)),
+  frequency = c("collab_prim_slp", "collab_prim_sped", "collab_prim_ge",
+                "collab_prim_ot", "collab_prim_sw", "collab_prim_bs",
+                "collab_prim_sn", "collab_prim_pt", "collab_prim_sc",
+                "collab_prim_as", NA, "collab_prim_aud"))
+interag_items <- tibble(
+  Professional = c("Mental/Behavioral Health Providers", "Behavior Analysts",
+                   "Speech Language Pathologists/Therapists", "Psychiatrists",
+                   "Occupational Therapists", "Primary Care Providers",
+                   "Social Workers", "Other", "Physical Therapists", "Audiologists"),
+  checkbox = paste0("interout_prim___", c(70, 90, 20, 60, 30, 50, 80, 100, 40, 10)),
+  frequency = c("interout_prim_ment", "interout_prim_ba", "interout_prim_slp", 
+                "interout_prim_psych", "interout_prim_ot", "interout_prim_pcp",
+                "interout_prim_sw", NA, "interout_prim_pt", "interout_prim_aud"))
+
+# Calculate counts, percentages, and frequency stats using a helper function
+make_collaborator_rows <- function(data, items, eligible_variable) {
+
+  # Count people included in this table section
+  N <- sum(!is.na(data[[eligible_variable]]))
+
+  # "Other" has no frequency variable, so remove to add back later
+  frequency_items <- items |>
+    filter(Professional != "Other")
+
+  # Calculate results for each professional with a frequency rating.
+  results <- vector("list", nrow(frequency_items)) # set up vector to fill in
+  for (i in seq_len(nrow(frequency_items))) { # for each collaborator other than "other"
+    checkbox_column <- frequency_items$checkbox[i] 
+    frequency_column <- frequency_items$frequency[i]
+    
+    # Number of participants selecting
+    selected <- data[[checkbox_column]] == 1
+    selected[is.na(selected)] <- FALSE # make NA mean no
+    n_selected <- sum(selected)
+    
+    # Get frequency values for people who selected this collaborator
+    selected_frequencies <- data[[frequency_column]][selected]
+    n_missing <- sum(is.na(selected_frequencies))
+    observed_frequencies <- selected_frequencies[!is.na(selected_frequencies)]
+    
+    # Frequency descriptive statistics
+    results[[i]] <- tibble(Professional = frequency_items$Professional[i],
+                           n = as.character(n_selected),
+                           `%` = as.character(round(100 * n_selected / N)),
+                           Mean = sprintf("%.2f", mean(observed_frequencies)),
+                           SD = sprintf("%.2f", sd(observed_frequencies)),
+                           Median = sprintf("%.2f", median(observed_frequencies)),
+                           `Range (0–100)` = sprintf("%.0f–%.0f", min(observed_frequencies),
+                                                     max(observed_frequencies)),
+                           `n Missing` = as.character(n_missing))
+  }
+
+  # Add the "Other" row with counts only.
+  other_item <- items |>
+    filter(Professional == "Other")
+  selected_other <- data[[other_item$checkbox]] == 1
+  selected_other[is.na(selected_other)] <- FALSE
+  n_other <- sum(selected_other)
+  other_row <- tibble(Professional = "Other", 
+                      n = as.character(n_other),
+                      `%` = as.character(round(100 * n_other / N)),
+                      Mean = "-", SD = "-", Median = "-", `Range (0–100)` = "-", 
+                      `n Missing` = "-")
+
+  # Combine the rows in the order specified
+  bind_rows(results, other_row) |>
+    arrange(match(Professional, items$Professional))
+}
+
+# Add the two section headings and their rows using helper function
+interpro_N <- sum(!is.na(recoded_data$multidis_prim)) # number of observations for section
+interag_N <- sum(!is.na(recoded_data$interagency_prim))
+interpro_rows <- make_collaborator_rows(recoded_data, interpro_items, "multidis_prim")
+interag_rows <- make_collaborator_rows(recoded_data, interag_items, "interagency_prim")
+section_row <- function(title) { # helper function for section row (e.g., Interagency Collaboration)
+  tibble(
+    Professional = title,
+    n = "",
+    `%` = "",
+    Mean = "",
+    SD = "",
+    Median = "",
+    `Range (0–100)` = "",
+    `n Missing` = ""
+  )
+}
+table5 <- bind_rows(section_row(paste0("Interprofessional Collaboration (N = ", interpro_N, ")")),
+                    interpro_rows,
+                    section_row(paste0("Interagency Collaboration (N = ", interag_N, ")")),
+                    interag_rows)
+
+# Format and export to word
+section_rows <- which(grepl("Collaboration \\(N =", table5$Professional))
+ft <- flextable(table5) |>
+  bold(i = section_rows, bold = TRUE, j = "Professional") |>
+  theme_booktabs() |>
+  autofit()
+doc <- read_docx() |>
+  body_add_par("Table 5. School Psychologists' Report of IPP during Autism Eligibility Determination",
+               style = "heading 1") |> # title
+  body_add_flextable(value = ft) |> # table
+  body_add_par("Note. “Other” represents disciplines not specifically listed in the table.",
+               style = "Normal") # footnote
+print(doc, target = "../Output/table5_collaboration_by_professional.docx") # save to file
+
+```
+
+### Table 6
+```{r}
+#| label: create table 6
+
+
+
+```
+
+## Multiple regression
 
