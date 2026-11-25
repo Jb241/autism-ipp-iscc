@@ -53,18 +53,49 @@ Quarto runs code from the folder this `.qmd` file is saved in, so you don't need
 #| label: load-packages
 library(tidyverse)
 library(readxl)
+library(mice)
+
 ```
 
-### Load original data
+### Load data
 
 ```{r}
 #| label: load-data
-#data <- readRDS("../Data/autism_ipp_imputed.rds")
+
+recoded_data <- readRDS("../Data/autism_ipp_recoded.rds")
+imputed_data <- readRDS("../Data/autism_ipp_imputed.rds")
+completed_sets <- complete(imputed_data, action = "all") # extract the 20 imputed datasets
+
 ```
 
-## Step 2
+## Drop rows
+Drop rows (people) that are missing data on the dependent variables to create two data sets. 
 
+### Interprofessional collaboration
+First, drop people who are missing data on either frequency of collaboration or number of collaborators for interprofessional collaboration. 
 ```{r}
-#| label: step-2
+#| label: drop rows interprofessional collab
 
+interpro_recoded_data <- recoded_data |>
+                            drop_na(interpro_num, interpro_freq)
+
+interpro_imputed_data <- lapply(completed_sets, function(data) { # drop NA in each of 20 imputed datasets
+  drop_na(data, interpro_num, interpro_freq)
+})
 ```
+
+### Interagency collaboration
+Second, drop people who are missing data on either frequency of collaboration or number of collaborators for interagency collaboration.
+```{r}
+#| label: drop rows interagency collab
+
+interag_recoded_data <- recoded_data |>
+                            drop_na(interag_num, interag_freq)
+
+interag_imputed_data <- lapply(completed_sets, function(data) { # drop NA in each of 20 imputed datasets
+  drop_na(data, interag_num, interag_freq)
+})
+```
+
+## Descriptive tables
+

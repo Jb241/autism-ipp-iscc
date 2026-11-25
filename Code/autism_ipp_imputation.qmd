@@ -34,7 +34,7 @@ execute:
 
 |             |                                                 |
 |-------------|-------------------------------------------------|
-| **Input**   | `autism_ipp_recoded.rds`                            |
+| **Input**   | `autism_ipp_recoded.rds`                        |
 | **Output**  | `autism_ipp_imputed.rds`                        |
 
 ::: {.callout-note collapse="true" title="Dependencies"}
@@ -51,20 +51,177 @@ Quarto runs code from the folder this `.qmd` file is saved in, so you don't need
 
 ```{r}
 #| label: load-packages
+
 library(tidyverse)
-library(readxl)
+#install.packages("mice") # run once then comment out
+library(mice)
 ```
 
 ### Load original data
 
 ```{r}
 #| label: load-data
-#data <- readRDS("../Data/autism_ipp_recoded.rds")
+
+original_data <- readRDS("../Data/autism_ipp_recoded.rds")
 ```
 
-## Step 2
+## Set up imputation
+
+### Select variables
+
+First, select the variables that you want to include in the imputation model. These should include all of the variables that will be in your analysis (in the form they will be in for the analysis) as well as any variables that you think may help predict/fill in missing values. The data object should only include these columns.
 
 ```{r}
-#| label: step-2
+#| label: set-up-imputation-variables
 
+set.seed(20261022) # ensure reproducibility
+
+imputation_vars <- c(
+  # Participant characteristics
+  "gender", "race", "degree",
+  "masters_nasp", "specialist_nasp", "doctorate_nasp", "doctorate_apa",
+  "intern_school", "intern_hospital", "intern_detention", "intern_health_sci",
+  "intern_residential", "intern_community_mh", "intern_consortium", "intern_other",
+  "practice_setting", "district",
+
+  # Independent variables
+  "perceived_know", "fact_know_asksp", "train_quality",
+  "att_effic_atihct", "att_quality_atihct",
+
+  # Dependent variables
+  "interpro_num", "interpro_freq", "interag_num", "interag_freq"
+)
+
+data_to_impute <- original_data[imputation_vars]
+
+# Grab names of variables that have no missing values
+missing_n <- colSums(is.na(data_to_impute))
+print(missing_n)
+no_miss <- names(missing_n[missing_n == 0])
+
+# Identify dependent variables
+dependent_vars <- c("interpro_num", "interpro_freq", "interag_num", "interag_freq")
+not_dv_vars <- setdiff(imputation_vars, dependent_vars)
+```
+
+There is no missingness in gender, race, degree, intern location, practice setting, or fact_know_asksp. These can still be used to impute other variables, but they do not need to be imputed themselves. We also will not impute our dependent variables, both on principle, and because we do not know whether missing values in this case are actually missing or indicate 0 collaboration.
+
+### Set imputation methods
+
+```{r}
+#| label: set-up-imputation-methods
+
+# First mark every NA as eligible for imputation
+where <- is.na(data_to_impute)
+
+# Initialize in order to edit methods
+initial <- mice(data_to_impute, maxit = 0, printFlag = FALSE)
+method <- initial$method
+predictor_matrix <- initial$predictorMatrix
+
+# Remove imputation for dependent vars
+method[dependent_vars] <- ""
+predictor_matrix[dependent_vars, ] <- 0
+where[, dependent_vars] <- F
+
+# Remove imputation for variables without missingness
+method[no_miss] <- ""
+predictor_matrix[no_miss, ] <- 0
+
+# Double check that the methods look correct
+print(method) # pmm works well for continuous, polyreg works for unordered categorical
+```
+
+### Deal with problematic variables
+
+There are many very sparse categories of gender, which cause gender to be dropped as a predictor in the imputation models. As such, remove gender as a predictor in the imputation model. Additionally, there are structural NAs in the credential variables, so these NAs will also not be imputed, the variables will not be predictors, and constant degree will not be used to impute.
+
+```{r}
+#| label: remove-variables
+
+# Gender
+predictor_matrix[, "gender"] <- 0
+
+# Accreditation
+credential_vars <- c("masters_nasp",
+                     "specialist_nasp",
+                     "doctorate_nasp",
+                     "doctorate_apa")
+degree_group <- as.character(data_to_impute$degree)
+
+# Accreditation NAs for nonmatching degree groups are structural NAs, so do not impute
+where[which(degree_group != "Master's" | is.na(degree_group)), "masters_nasp"] <- F # for masters_nasp where degree is not master's or degree is missing, do not impute
+where[which(degree_group != "Specialist" | is.na(degree_group)), "specialist_nasp"] <- F
+where[which(degree_group != "Doctorate" | is.na(degree_group)), "doctorate_nasp"] <- F
+where[which(degree_group != "Doctorate" | is.na(degree_group)), "doctorate_apa"] <- F
+
+# Don't use the accreditation variables as predictors for other variables
+predictor_matrix[, credential_vars] <- 0
+
+# Degree is constant within each accreditation variable's applicable group,
+# so don't use it to impute those accreditation variables
+predictor_matrix[credential_vars, "degree"] <- 0
+```
+
+## Run imputation
+
+Now, we will run the imputation model with the predictor matrix and methods that we set above.
+
+```{r}
+#| label: run-imputation
+
+imputed_data <- mice(data_to_impute,
+                     m = 20,
+                     maxit = 20,
+                     method = method,
+                     predictorMatrix = predictor_matrix,
+                     where = where,
+                     seed = 20261022, # same seed for reproducibility
+                     printFlag = FALSE)
+```
+
+## Check imputation
+
+To check that the imputation model ran correctly, we check that the only remaining NAs are for respondents who had NAs in the dependent variable(s). These individuals will be dropped from the analysis.
+
+```{r}
+#| label: check-imputation
+#| message: true
+
+completed_datasets <- complete(imputed_data, action = "all")
+check_results <- data.frame()
+
+# Check each imputed dataset
+for (imputation_number in seq_along(completed_datasets)) { # loop across datasets
+  current_data <- completed_datasets[[imputation_number]]
+
+  # rows where at least one dependent variable is missing
+  row_has_missing_dependent <- rowSums(is.na(current_data[dependent_vars])) > 0
+
+  for (variable in not_dv_vars) { # loop across non-DV vars
+
+    # NAs that occur in rows where no dependent variable is missing (& not structural)
+    na_count <- sum(is.na(current_data[[variable]]) & where[, variable] & !row_has_missing_dependent)
+
+    # Save the result for this variable and imputation
+    check_results <- rbind(check_results, data.frame(imputation = imputation_number,
+                                                     variable = variable,
+                                                     unexpected_na_count = na_count))
+  }
+}
+
+# Keep only problems, unexpected NAs with a count above zero
+problems <- subset(check_results, unexpected_na_count > 0)
+if (nrow(problems) == 0) {
+  message("PASS: all remaining NAs are in rows where a dependent variable is missing.")
+} else {
+  print(problems)
+  stop("Check failed: some NAs are in rows where all dependent variables have values.")
+}
+```
+
+## Save data
+
+```{r}
+saveRDS(imputed_data, "../Data/autism_ipp_imputed.rds")
 ```

@@ -310,35 +310,50 @@ The frequency measures are created by averaging across the frequency ratings for
 :::
 
 ```{r}
-#| label: recode outcomes
+#| label: recode interprofessional outcomes
+
+table(data$multidis_prim) 
+# 7 said they do not participate in any interprofessional collaboration.
+# these 7 will have interpro_num == 0 and interpro_freq == NA
 
 # Total interprofessional collaborators
 interpro_cols <- paste0("collab_prim___", seq(10, 120, by = 10)) # creates object with all of the collaborator variables
-!anyNA(data[interpro_cols]) # checks that there are no missing values (TRUE)
 data <- data |>
   mutate(interpro_num = rowSums(data[interpro_cols])) # counts number of professionals
-summary(data$interpro_num)
+table(data$interpro_num)
+# 26 have interpro_num == 0, so (26 - 7 =) 19 people said yes they participate in interprofessional collaboration but did not nominate any of the options
 
 # Frequency of interprofessional collaboration
 interprofreq_cols <-c("collab_prim_aud", "collab_prim_slp", "collab_prim_ot", "collab_prim_pt", "collab_prim_sn", "collab_prim_sc", "collab_prim_sw", "collab_prim_bs", "collab_prim_as", "collab_prim_sped", "collab_prim_ge")
 data <- data |>
   mutate(interpro_freq = rowMeans(data[interprofreq_cols], na.rm = T)) # averages frequencies across professionals that are selected (ignoring non-selected (NAs))
-summary(data$interpro_freq)
+summary(data$interpro_freq) # 26 NAs
+```
+Please note that the NA's in the frequency measure either means that the participant does not participate in any interprofessional collaboration or that they did not answer these questions. There are 26 people who have NAs for interpro_freq. 7 of these people said they do not engage at all in interprofessional collaboration, and 19 people said they do engage in interprofessional collaboration but did not select one of the options. All of these people will be removed from the analysis.
+
+```{r}
+#| label: recode interagency outcomes
+
+table(data$interagency_prim) 
+# 124 said they do not participate in any interagency collaboration.
+# these 124 will have interag_num == 0 and interag_freq == NA
 
 # Total interagency collaborators
 interag_cols <- paste0("interout_prim___", seq(10, 100, by = 10))
-!anyNA(data[interag_cols]) # TRUE means no missing values
 data <- data |>
   mutate(interag_num = rowSums(data[interag_cols]))
-summary(data$interag_num)
+table(data$interag_num)
+# 149 have interag_num == 0, so (149 - 124 =) 25 people said yes they participate in interagency collaboration but did not nominate any of the options
 
 # Frequency of interagency collaboration
 interagfreq_cols <-c("interout_prim_aud", "interout_prim_slp", "interout_prim_ot", "interout_prim_pt", "interout_prim_pcp", "interout_prim_psych", "interout_prim_ment", "interout_prim_sw", "interout_prim_ba")
 data <- data |>
   mutate(interag_freq = rowMeans(data[interagfreq_cols], na.rm = T))
-summary(data$interag_freq)
+data$interag_freq[data$interagency_prim == 0] <- NA
+summary(data$interag_freq) #158 NAs
+
 ```
-Please note that the NA's in these measures could either mean that they do not participate in any intra/interprofessional collaboration or that they did not answer these questions.
+Please note that the NA's in the frequency measure either means that the participant does not participate in any interagency collaboration or that they did not answer these questions. There are 158 people who have NAs for interag_freq. 124 of these people said they do not engage at all in interprofessional collaboration, 25 people said they do engage in interagency collaboration but did not select one of the options, and the remaining 9 just did not answer any frequency questions. All of these people will be removed from the analysis.
 
 ## Export dataset
 
@@ -415,6 +430,7 @@ data_recoded <- data |> # restrict to just relevant variables
 ```{r}
 #| label: save data
 
-saveRDS(data_recoded, "../Data/Recoded Data.rds")
+dim(data) # 271 participants
+saveRDS(data_recoded, "../Data/autism_ipp_recoded.rds")
 write_csv(data_recoded, "../Data/Recoded Data.csv")
 ```
